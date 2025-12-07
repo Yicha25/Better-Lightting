@@ -1,3 +1,11 @@
+// ==UserScript==
+// @name         Better-Lightting
+// @namespace    https://github.com/Yicha25/Better-Lightting/
+// @version      0.1
+// @match        https://www.geo-fs.com/geofs.php?v=*
+// @match        https://*.geo-fs.com/geofs.php*
+// ==/UserScript==
+
 (function() {
     console.log("Installing Better Lighting by Yicha");
 
