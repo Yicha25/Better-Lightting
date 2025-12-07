@@ -1,9 +1,10 @@
 // ==UserScript==
-// @name         Better-Lightting
-// @namespace    https://github.com/Yicha25/Better-Lightting/
-// @version      0.1
-// @match        https://www.geo-fs.com/geofs.php?v=*
-// @match        https://*.geo-fs.com/geofs.php*
+// @name         Better-Lightting
+// @namespace    https://github.com/Yicha25/Better-Lightting/
+// @version      0.5
+// @match        https://www.geo-fs.com/geofs.php?v=*
+// @match        https://*.geo-fs.com/geofs.php*
+// @grant        none
 // ==/UserScript==
 
 (function() {
@@ -22,12 +23,19 @@
                 };
             }
             
+            // Define the update function 
+            geofs.ssr.updateStrength = function(value) {
+                // Convert slider value (0-100) to shader uniform (0.0-1.0)
+                geofs.ssr.strength = parseFloat(value) / 100.0;
+                geofs.ssr.updateUniforms(); 
+            };
+            
             if (!geofs.aircraft || !geofs.aircraft.instance || !geofs.aircraft.instance.object3d.model) {
                 throw new Error("Aircraft model not fully loaded. Please wait.");
             }
             const planeModel = geofs.aircraft.instance.object3d.model._model;
 
-            // --- 1. GLSL Shader Code (SSR Core + Attenuation) ---
+            // --- 1. GLSL Shader Code (Unchanged) ---
             const shaderCode = `
                 #extension GL_OES_standard_derivatives : enable
                 uniform sampler2D depthTexture;
@@ -71,21 +79,9 @@
                     
                     // *** ATTENUATION FACTOR ***
                     float attenuation = 1.0;
-
-                    // 1. Distance Attenuation: Reduce reflection far away (Helps fade ground)
                     float viewDistance = length(pos);
-                    // Fade out completely after 300 meters (the plane is close to the camera, the ground is distant)
                     attenuation *= clamp(1.0 - (viewDistance / 300.0), 0.0, 1.0); 
 
-                    // 2. Normal Attenuation: Reduce reflection if normal is pointing straight up (Helps filter the ground)
-                    // The ground plane's normal is (0, 0, 1) in View Space (Y-up) or close to it.
-                    // Dot product of (0, 0, 1) and Normal will be 1 for flat ground.
-                    // We want this attenuation to be LOW for flat ground (high dot product)
-                    attenuation *= clamp(1.0 - abs(normal.z), 0.0, 1.0);
-                    // We reverse it to make surfaces facing up have LOW attenuation (but this depends on the model's orientation)
-                    // Let's just use the distance attenuation, as the normal trick is highly dependent on Cesium's view matrix.
-
-                    // Final Attenuation Check (Just use the distance for reliability)
                     if (attenuation < 0.05) {
                         gl_FragColor = color;
                         return;
@@ -120,7 +116,6 @@
                     // Final Mix
                     if (hit > 0.5) {
                         vec4 reflectColor = texture2D(colorTexture, hitUV);
-                        // Apply the manual attenuation factor to the strength
                         gl_FragColor = mix(color, reflectColor, strength * attenuation); 
                     } else {
                         gl_FragColor = color;
@@ -128,7 +123,7 @@
                 }
             `;
 
-            // --- 2. JavaScript Setup and UI Injection (Remains the same) ---
+            // --- 2. JavaScript Setup and UI Injection ---
 
             if (geofs.fx && geofs.fx.rrt && geofs.fx.rrt.shader) {
                 geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
@@ -137,9 +132,9 @@
 
             geofs.ssr.updateUniforms = function() {
                  if (geofs.fx.rrt && geofs.fx.rrt.shader) {
-                    geofs.fx.rrt.shader.uniforms.strength = function() { return geofs.ssr.strength; };
-                    geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
-                }
+                     geofs.fx.rrt.shader.uniforms.strength = function() { return geofs.ssr.strength; };
+                     geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
+                 }
             };
             
             // Create the PostProcessStage
@@ -161,9 +156,11 @@
                 .getElementsByClassName("geofs-stopMousePropagation")[0];
             
             if (advancedList) {
+                // Toggle Switch Logic (unchanged)
                 geofs.ssr.toggleUpdate = function(el) {
                     geofs.ssr.isEnabled = !geofs.ssr.isEnabled;
                     el.setAttribute("class", "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.isEnabled ? " is-checked" : ""));
+                    geofs.ssr.updateUniforms();
                 };
                 
                 var toggleDiv = document.createElement("label");
@@ -172,22 +169,56 @@
                 toggleDiv.addEventListener("click", function() { geofs.ssr.toggleUpdate(toggleDiv); });
                 advancedList.appendChild(toggleDiv);
 
+                // Slider Setup
                 var strengthDiv = document.createElement("div");
                 strengthDiv.className = "slider";
                 strengthDiv.setAttribute("data-type", "slider");
-                strengthDiv.setAttribute("data-min", "1");
+                strengthDiv.setAttribute("data-min", "0");
                 strengthDiv.setAttribute("data-max", "100");
                 strengthDiv.setAttribute("data-precision", "1");
-                strengthDiv.setAttribute("value", (geofs.ssr.strength * 100).toString());
-                strengthDiv.setAttribute("data-gespref", "geofs.ssr.strength");
-                strengthDiv.setAttribute("data-update", "geofs.ssr.updateStrength(value)");
-                strengthDiv.innerHTML = '<div class="slider-rail"><div class="slider-selection" style="width: 50%;"><div class="slider-grippy"><input class="slider-input"></div></div></div><label>Reflection Strength (%)</label>'; 
+                
+                const sliderValue = Math.round(geofs.ssr.strength * 100).toString();
+                
+                // Set the initial numeric value
+                strengthDiv.setAttribute("value", sliderValue); 
+                
+                // *** FIX FOR NATIVE LOOK ***
+                // We simplify the inner HTML to rely on GeoFS's default slider rendering scripts.
+                // The structure for a native slider is simply:
+                // <div><input type="range"></div><label>Text</label>
+                // The GeoFS framework will then add the rail, selection, and number display.
+                strengthDiv.innerHTML = `
+                    <div>
+                        <input type="range" 
+                            min="0" 
+                            max="100" 
+                            step="1" 
+                            value="${sliderValue}" 
+                            class="slider-input">
+                    </div>
+                    <label>Reflection Strength (%)</label>
+                `; 
                 advancedList.appendChild(strengthDiv);
                 
-                geofs.ssr.updateStrength = function(value) {
-                    geofs.ssr.strength = parseFloat(value) / 100.0;
-                };
-                
+                // Event listener for functionality and VISUAL UPDATE
+                const sliderInput = strengthDiv.querySelector('.slider-input');
+                if (sliderInput) {
+                    sliderInput.addEventListener('input', function() {
+                        const newValue = this.value;
+                        
+                        // 1. Update the strength in the shader
+                        geofs.ssr.updateStrength(newValue); 
+                        
+                        // 2. Update the parent DIV's 'value' attribute (This triggers GeoFS's rendering update)
+                        strengthDiv.setAttribute("value", newValue);
+                        
+                        // Note: We no longer manually update the .slider-selection width, 
+                        // relying on the GeoFS framework to do it based on the updated 'value' attribute.
+                    });
+                } else {
+                    console.warn("Could not find slider input element.");
+                }
+
             } else {
                  console.warn("Could not find Advanced Settings list. UI controls will not appear.");
             }
