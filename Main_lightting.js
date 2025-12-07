@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Better-Lightting
 // @namespace    https://github.com/Yicha25/Better-Lightting/
-// @version      0.5
+// @version      0.1.7 
 // @match        https://www.geo-fs.com/geofs.php?v=*
 // @match        https://*.geo-fs.com/geofs.php*
-// @grant        none
+// @grant        none
+// @updateURL    https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
+// @downloadURL  https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
 // ==/UserScript==
 
 (function() {
@@ -156,7 +158,7 @@
                 .getElementsByClassName("geofs-stopMousePropagation")[0];
             
             if (advancedList) {
-                // Toggle Switch Logic (unchanged)
+                // Toggle Switch Logic
                 geofs.ssr.toggleUpdate = function(el) {
                     geofs.ssr.isEnabled = !geofs.ssr.isEnabled;
                     el.setAttribute("class", "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.isEnabled ? " is-checked" : ""));
@@ -169,7 +171,7 @@
                 toggleDiv.addEventListener("click", function() { geofs.ssr.toggleUpdate(toggleDiv); });
                 advancedList.appendChild(toggleDiv);
 
-                // Slider Setup
+                // Slider Setup (Native Look)
                 var strengthDiv = document.createElement("div");
                 strengthDiv.className = "slider";
                 strengthDiv.setAttribute("data-type", "slider");
@@ -182,11 +184,6 @@
                 // Set the initial numeric value
                 strengthDiv.setAttribute("value", sliderValue); 
                 
-                // *** FIX FOR NATIVE LOOK ***
-                // We simplify the inner HTML to rely on GeoFS's default slider rendering scripts.
-                // The structure for a native slider is simply:
-                // <div><input type="range"></div><label>Text</label>
-                // The GeoFS framework will then add the rail, selection, and number display.
                 strengthDiv.innerHTML = `
                     <div>
                         <input type="range" 
@@ -209,11 +206,8 @@
                         // 1. Update the strength in the shader
                         geofs.ssr.updateStrength(newValue); 
                         
-                        // 2. Update the parent DIV's 'value' attribute (This triggers GeoFS's rendering update)
+                        // 2. Update the parent DIV's 'value' attribute (for visual feedback)
                         strengthDiv.setAttribute("value", newValue);
-                        
-                        // Note: We no longer manually update the .slider-selection width, 
-                        // relying on the GeoFS framework to do it based on the updated 'value' attribute.
                     });
                 } else {
                     console.warn("Could not find slider input element.");
