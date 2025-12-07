@@ -1,2 +1,2 @@
 # Better-Lightting
-Better light render for GeoFS
+Better light render for GeoFS by using SSR (Screen Space Reflections)
