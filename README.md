@@ -1,7 +1,7 @@
 # Better Lighting (SSR Reflections)
 Enhances the visual quality of aircraft models in GeoFS by introducing Screen Space Reflections (SSR). This adds realistic, dynamic reflections of the sky, ground, and environment onto your aircraft's surfaces, significantly improving the look and feel of the simulation.
 
-#Features
+# Features
 Dynamic SSR Reflections: Applies real-time reflections calculated based on the current scene and camera view.
 
 Performance Filtering: Includes distance attenuation in the shader to automatically fade reflections on distant objects, improving performance and realism.
@@ -11,7 +11,7 @@ Integrated UI Controls: Adds controls directly into the GeoFS Advanced Settings 
 # Installation
 This add-on is distributed as a UserScript and requires a script manager extension (like Tampermonkey) to run in your browser.
 
-Prerequisites
+# Prerequisites
 You need a browser extension installed that can manage UserScripts:
 
 Tampermonkey (Recommended for Chrome, Firefox, Edge)
