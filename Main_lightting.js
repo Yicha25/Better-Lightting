@@ -12,7 +12,7 @@
     setTimeout(function() {
         try {
             // --- Configuration & Global State ---
-            const initialStrength = 0.3;
+            const initialStrength = 0.5;
             
             if (typeof geofs.ssr === 'undefined') {
                 geofs.ssr = {
