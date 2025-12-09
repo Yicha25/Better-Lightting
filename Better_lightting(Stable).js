@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Better-Lightting
-// @namespace    https://github.com/Yicha25/Better-Lightting/
-// @version      0.1.7 
-// @match        https://www.geo-fs.com/geofs.php?v=*
-// @match        https://*.geo-fs.com/geofs.php*
-// @grant        none
-// @updateURL    https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
-// @downloadURL  https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
+// @name Better-Lightting
+// @namespace https://github.com/Yicha25/Better-Lightting/
+// @version 0.1.8
+// @match https://www.geo-fs.com/geofs.php?v=*
+// @match https://*.geo-fs.com/geofs.php*
+// @grant none
+// @updateURL https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
+// @downloadURL https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
 // ==/UserScript==
 
 (function() {
@@ -14,30 +14,28 @@
 
     setTimeout(function() {
         try {
-            // --- Configuration & Global State ---
             const initialStrength = 0.5;
-            
+            const MAX_REFLECTION_DISTANCE = 3500.0; 
+
             if (typeof geofs.ssr === 'undefined') {
                 geofs.ssr = {
-                    strength: initialStrength, 
-                    maxDistance: 2500.0,
+                    strength: initialStrength,
+                    maxDistance: MAX_REFLECTION_DISTANCE,
                     isEnabled: true
                 };
             }
-            
-            // Define the update function 
+
             geofs.ssr.updateStrength = function(value) {
-                // Convert slider value (0-100) to shader uniform (0.0-1.0)
                 geofs.ssr.strength = parseFloat(value) / 100.0;
-                geofs.ssr.updateUniforms(); 
+                geofs.ssr.updateUniforms();
             };
-            
+
             if (!geofs.aircraft || !geofs.aircraft.instance || !geofs.aircraft.instance.object3d.model) {
                 throw new Error("Aircraft model not fully loaded. Please wait.");
             }
             const planeModel = geofs.aircraft.instance.object3d.model._model;
 
-            // --- 1. GLSL Shader Code (Unchanged) ---
+            // --- 1. GLSL Shader Code (Simplified Culling) ---
             const shaderCode = `
                 #extension GL_OES_standard_derivatives : enable
                 uniform sampler2D depthTexture;
@@ -69,6 +67,7 @@
 
                     vec4 color = texture2D(colorTexture, v_textureCoordinates);
                     float depth = czm_readDepth(depthTexture, v_textureCoordinates);
+                    
                     if (depth >= 1.0) {
                         gl_FragColor = color;
                         return;
@@ -76,29 +75,38 @@
 
                     vec3 pos = getPosition(v_textureCoordinates, depth);
                     vec3 normal = getNormal(pos);
-                    vec3 viewDir = normalize(pos); 
-                    vec3 rayDir = reflect(viewDir, normal); 
-                    
-                    // *** ATTENUATION FACTOR ***
-                    float attenuation = 1.0;
-                    float viewDistance = length(pos);
-                    attenuation *= clamp(1.0 - (viewDistance / 300.0), 0.0, 1.0); 
+                    vec3 viewDir = normalize(pos);
+                    vec3 rayDir = reflect(viewDir, normal);
 
-                    if (attenuation < 0.05) {
-                        gl_FragColor = color;
+                    // *** CRASH-PROOF GROUND CULLING (Horizon Angle Check) ***
+                    // If the reflected ray is pointing down (negative Y in view space) 
+                    // by more than 1% of the total vector length, we discard it.
+                    if (rayDir.y < -0.01) { 
+                        gl_FragColor = color; // Kill reflection immediately
                         return;
                     }
-
-                    // Ray Marching
+                    // *** END CULLING ***
+                    
+                    // --- Attenuation (v0.2.4) ---
+                    float attenuation = 1.0;
+                    float viewDistance = length(pos);
+                    
+                    if (viewDistance < 50.0) {
+                        attenuation = 1.0; 
+                    } else {
+                        attenuation *= clamp(1.0 - (viewDistance / 500.0), 0.0, 1.0);
+                    }
+                    
+                    // Ray Marching (v0.2.4 stability)
                     vec3 currentPos = pos;
-                    float rayLength = maxDistance * 0.01;
+                    float rayLength = maxDistance * 0.01; 
                     float hit = 0.0;
                     vec2 hitUV = vec2(0.0);
 
                     for(int i = 0; i < 30; i++) {
                         currentPos += rayDir * rayLength;
-                        rayLength += maxDistance * 0.01;
-                        
+                        rayLength += maxDistance * 0.01; 
+
                         vec4 clip = czm_projection * vec4(currentPos, 1.0);
                         vec3 ndc = clip.xyz / clip.w;
                         vec2 testUV = ndc.xy * 0.5 + 0.5;
@@ -118,14 +126,12 @@
                     // Final Mix
                     if (hit > 0.5) {
                         vec4 reflectColor = texture2D(colorTexture, hitUV);
-                        gl_FragColor = mix(color, reflectColor, strength * attenuation); 
+                        gl_FragColor = mix(color, reflectColor, strength * attenuation);
                     } else {
                         gl_FragColor = color;
                     }
                 }
             `;
-
-            // --- 2. JavaScript Setup and UI Injection ---
 
             if (geofs.fx && geofs.fx.rrt && geofs.fx.rrt.shader) {
                 geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
@@ -138,7 +144,7 @@
                      geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
                  }
             };
-            
+
             // Create the PostProcessStage
             geofs.fx.rrt.shader = new Cesium.PostProcessStage({
                 fragmentShader: shaderCode,
@@ -151,62 +157,53 @@
             });
 
             geofs.api.viewer.scene.postProcessStages.add(geofs.fx.rrt.shader);
-            
+
             // --- UI Injection ---
             const advancedList = document.getElementsByClassName("geofs-preference-list")[0]
                 .getElementsByClassName("geofs-advanced")[0]
                 .getElementsByClassName("geofs-stopMousePropagation")[0];
-            
+
             if (advancedList) {
-                // Toggle Switch Logic
                 geofs.ssr.toggleUpdate = function(el) {
                     geofs.ssr.isEnabled = !geofs.ssr.isEnabled;
                     el.setAttribute("class", "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.isEnabled ? " is-checked" : ""));
                     geofs.ssr.updateUniforms();
                 };
-                
+
                 var toggleDiv = document.createElement("label");
                 toggleDiv.className = "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded is-checked";
-                toggleDiv.innerHTML = '<input type="checkbox" class="mdl-switch__input" checked><span class="mdl-switch__label">SSR Reflections (Stable)</span>'; 
+                toggleDiv.innerHTML = '<input type="checkbox" class="mdl-switch__input" checked><span class="mdl-switch__label">SSR Reflections (Stable)</span>';
                 toggleDiv.addEventListener("click", function() { geofs.ssr.toggleUpdate(toggleDiv); });
                 advancedList.appendChild(toggleDiv);
 
-                // Slider Setup (Native Look)
                 var strengthDiv = document.createElement("div");
                 strengthDiv.className = "slider";
                 strengthDiv.setAttribute("data-type", "slider");
                 strengthDiv.setAttribute("data-min", "0");
                 strengthDiv.setAttribute("data-max", "100");
                 strengthDiv.setAttribute("data-precision", "1");
-                
+
                 const sliderValue = Math.round(geofs.ssr.strength * 100).toString();
-                
-                // Set the initial numeric value
-                strengthDiv.setAttribute("value", sliderValue); 
-                
+                strengthDiv.setAttribute("value", sliderValue);
+
                 strengthDiv.innerHTML = `
                     <div>
-                        <input type="range" 
-                            min="0" 
-                            max="100" 
-                            step="1" 
-                            value="${sliderValue}" 
+                        <input type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value="${sliderValue}"
                             class="slider-input">
                     </div>
                     <label>Reflection Strength (%)</label>
-                `; 
+                `;
                 advancedList.appendChild(strengthDiv);
-                
-                // Event listener for functionality and VISUAL UPDATE
+
                 const sliderInput = strengthDiv.querySelector('.slider-input');
                 if (sliderInput) {
                     sliderInput.addEventListener('input', function() {
                         const newValue = this.value;
-                        
-                        // 1. Update the strength in the shader
-                        geofs.ssr.updateStrength(newValue); 
-                        
-                        // 2. Update the parent DIV's 'value' attribute (for visual feedback)
+                        geofs.ssr.updateStrength(newValue);
                         strengthDiv.setAttribute("value", newValue);
                     });
                 } else {
