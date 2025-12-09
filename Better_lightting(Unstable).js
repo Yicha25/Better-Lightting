@@ -21,12 +21,12 @@
     function initSSR() {
         try {
             // --- Configuration & Global State ---
-            const initialStrength = 0.75; 
+            const initialStrength = 0.85; 
 
             if (typeof geofs.ssr === 'undefined') {
                 geofs.ssr = {
                     strength: initialStrength,
-                    maxDistance: 2000.0,
+                    maxDistance: 100000.0,
                     isEnabled: true
                 };
             }
