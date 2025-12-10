@@ -438,7 +438,7 @@
                 geofs.fx.rrt.updateUniforms();
             }, 100); 
 
-            console.log("SSR Installed with Original Core Logic. Ground culling is inherent.");
+            console.log("SSR Installed.");
 
         } catch (e) {
             console.error("Fatal Error To The Code:", e);
