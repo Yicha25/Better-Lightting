@@ -4,7 +4,7 @@ Enhances the visual quality of aircraft models in GeoFS by introducing Screen Sp
 
 # Features
 
-Dynamic SSR Reflections: Applies real-time reflections calculated based on the current scene and camera view.
+Dynamic Reflections: Applies real-time reflections calculated based on the current scene and camera view.
 
 Performance Filtering: Includes distance attenuation in the shader to automatically fade reflections on distant objects, improving performance and realism.
 
