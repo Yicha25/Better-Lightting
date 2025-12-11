@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name Better-Lighting
+// @name Better-Lighting-Original-GeoFS-SSR-Core
 // @namespace https://github.com/Yicha25/Better-Lightting/
 // @version 0.x.x
 // @match https://www.geo-fs.com/geofs.php?v=*
@@ -10,14 +10,15 @@
 // ==/UserScript==
 
 (function() {
-    console.log("Installing Better Lighting by Yicha (Unstable).");
+    console.log("Installing Better Lighting by Yicha (Unstable)");
 
-    // --- Configuration Constants ---
-    const INITIAL_STRENGTH = 1.0;
-    const INITIAL_MAX_DISTANCE = 20.0; 
-    let currentPlaneModel = null; 
+    const INITIAL_STRENGTH = 0.3;          
+    const INITIAL_MAX_DISTANCE = 50.0;     
+    const INITIAL_SMOOTH_NORMALS = false;  
+    const UI_INIT_DELAY_MS = 1500;
 
-    // --- 1. Original GLSL Shader Core (FIXED: Culling disabled in main) ---
+    let lastAircraftModel = null;
+
     const originalShaderCore = `
         uniform sampler2D depthTexture;
         uniform sampler2D colorTexture;
@@ -31,9 +32,9 @@
             #extension GL_OES_standard_derivatives : enable
         #endif 
 
-        // [GLSL helper functions omitted for brevity]
+        // [GLSL functions omitted for brevity]
         float rand(vec2 co){return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);}
-        vec4 clipToEye(vec2 uv, float depth){vec2 xy = vec2((uv.x * 2.0 - 1.0), ((1.0 - uv.y) * 2.0 - 1.0));vec4 posEC = czm_inverseProjection * vec4(xy, depth, 1.0);posEC = posEC / posEC.w;return posEC;}
+        vec4 clipToEye(vec2 uv, float depth){vec2 xy = vec2((uv.x * 2.0 - 1.0), ((1.0 - uv.y) * 2.0 - 1.0));vec4 viewPos = czm_inverseProjection * vec4(xy, depth, 1.0);viewPos = viewPos / viewPos.w;return viewPos;}
         vec4 depthToView(vec2 texCoord, float depth) {vec4 ndc = vec4(texCoord, depth, 1.0) * 2.0 - 1.0;vec4 viewPos = czm_inverseProjection * ndc;return viewPos / viewPos.w;}
         vec3 viewToDepth(vec3 pos){vec4 clip = czm_projection * vec4(pos,1.0);vec3 ndc = clip.xyz / clip.w;return ndc * .5 + .5;}
         vec3 getNormalXEdge(vec3 posInCamera, float depthU, float depthD, float depthL, float depthR, vec2 pixelSize){vec4 posInCameraUp = clipToEye(v_textureCoordinates - vec2(0.0, pixelSize.y), depthU);vec4 posInCameraDown = clipToEye(v_textureCoordinates + vec2(0.0, pixelSize.y), depthD);vec4 posInCameraLeft = clipToEye(v_textureCoordinates - vec2(pixelSize.x, 0.0), depthL);vec4 posInCameraRight = clipToEye(v_textureCoordinates + vec2(pixelSize.x, 0.0), depthR);vec3 up = posInCamera.xyz - posInCameraUp.xyz;vec3 down = posInCameraDown.xyz - posInCamera.xyz;vec3 left = posInCamera.xyz - posInCameraLeft.xyz;vec3 right = posInCameraRight.xyz - posInCamera.xyz;vec3 DX = length(left) < length(right) ? left : right;vec3 DY = length(up) < length(down) ? up : down;return normalize(cross(DY, DX));}
@@ -61,7 +62,7 @@
             vec4 posInCamera = clipToEye(v_textureCoordinates, depth1);
             vec4 initialPos = depthToView(v_textureCoordinates, depth1); 
 
-            if (smoothNormals == true) {
+            if (smoothNormals == true) { 
                 normals = blurNormals(v_textureCoordinates);
             } else {
                 normals = recNormals(vec3(v_textureCoordinates, depth1));
@@ -70,8 +71,8 @@
             vec2 pixelSize = czm_pixelRatio / czm_viewport.zw;
             float depthU = czm_readDepth(depthTexture, v_textureCoordinates - vec2(0.0, pixelSize.y));
             float depthD = czm_readDepth(depthTexture, v_textureCoordinates + vec2(0.0, pixelSize.y));
-            float depthL = czm_readDepth(depthTexture, v_textureCoordinates - vec2(pixelSize.x, 0.0));
-            float depthR = czm_readDepth(depthTexture, v_textureCoordinates + vec2(pixelSize.x, 0.0));
+            float depthL = czm_readDepth(depthTexture, v_textureCoordinates - vec2(pixelSize.x, 0.0)); 
+            float depthR = czm_readDepth(depthTexture, v_textureCoordinates + vec2(pixelSize.x, 0.0)); 
             vec3 normalInCamera = getNormalXEdge(posInCamera.xyz, depthU, depthD, depthL, depthR, pixelSize);
             
             float maxDistance = maxSearchDistance; 
@@ -88,13 +89,7 @@
             vec3 normal = normalize(normals);
             vec3 pivot = normalize(reflect(unitPositionFrom, normal));
             
-            // --- Culling/Fade Parameters from Original Shader (TEMPORARILY DISABLED) ---
-            // Original: vec3 diffVec = clamp((unitPositionFrom.xyz - abs(normal)) * 10.0 * (10.0 * depth1), 0.0, 10.0);
-            // Original: float dotP = clamp(-dot(normal, unitPositionFrom) * 10.0 * (4.0 * depth1), 0.0, 10.0);
-            // Original: float diffTest = clamp(1.0 - dot(pivot, unitPositionFrom), 0.0, 1.0); 
-
-            // FIX: Set culling parameters to a constant value that disables the check, 
-            // ensuring the raymarch runs across the whole object.
+            // --- Culling/Fade Parameters (DISABLED) ---
             float diffTest = 0.0; 
             // --- End Culling Parameters ---
 
@@ -139,8 +134,6 @@
             for (int i = 0; i < 10000; ++i) {
                 if (i > int(delta)) { break; }
                 if (depth1 > 0.99) { break; } 
-                
-                // IMPORTANT: The check below is now effectively disabled by setting diffTest = 0.0
                 if (diffTest > 0.9 ) { break; } 
 
                 frag += increment;
@@ -198,24 +191,45 @@
             if (colAtRef.rgb == vec3(0.0)) {
                 gl_FragColor = color;
             } else {
-                // By disabling the culling logic above, we test if the reflections render properly now.
                 vec4 mixColor = mix(color, colAtRef, strength); 
                 gl_FragColor = mixColor;
             }
         }
     `;
 
+    function updateUICheckboxes() {
+        const enabled = document.getElementById('ssr-enabled-toggle');
+        const normals = document.getElementById('ssr-normals-toggle');
+        const strengthDisplay = document.getElementById('ssr-strength-display');
+        const distanceDisplay = document.getElementById('ssr-distance-display');
+
+        if (enabled) enabled.checked = geofs.ssr.isEnabled;
+        if (normals) normals.checked = geofs.ssr.sNorm;
+        if (strengthDisplay) strengthDisplay.innerText = geofs.ssr.strength.toFixed(2);
+        if (distanceDisplay) distanceDisplay.innerText = geofs.ssr.maxSearchDistance.toFixed(0);
+    }
 
     setTimeout(function() {
         try {
-            // Assign the GLSL string
             geofs["rrt.glsl"] = originalShaderCore; 
 
-            // Initialize or retrieve SSR settings (omitted for brevity)
-            if (typeof geofs.ssr === 'undefined') {geofs.ssr = {isEnabled: true,sNorm: true,strength: INITIAL_STRENGTH,maxSearchDistance: INITIAL_MAX_DISTANCE };} else {if (typeof geofs.ssr.maxSearchDistance === 'undefined') {geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE;}}
+            if (typeof geofs.ssr === 'undefined') {
+                geofs.ssr = {
+                    isEnabled: true,
+                    sNorm: INITIAL_SMOOTH_NORMALS,
+                    strength: INITIAL_STRENGTH,
+                    maxSearchDistance: INITIAL_MAX_DISTANCE
+                };
+            } else {
+                if (typeof geofs.ssr.isEnabled === 'undefined') { geofs.ssr.isEnabled = true; }
+                if (typeof geofs.ssr.sNorm === 'undefined') { geofs.ssr.sNorm = INITIAL_SMOOTH_NORMALS; }
+                if (typeof geofs.ssr.strength === 'undefined') { geofs.ssr.strength = INITIAL_STRENGTH; }
+                if (typeof geofs.ssr.maxSearchDistance === 'undefined') { geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE; }
+            }
 
             geofs.fx.rrt = geofs.fx.rrt || {};
             
+            // Function to update shader uniforms
             geofs.fx.rrt.updateUniforms = function() {
                 if (geofs.fx.rrt && geofs.fx.rrt.shader) {
                     geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
@@ -225,134 +239,166 @@
                 }
             };
             
-            // UI Handlers (omitted for brevity)
-            geofs.ssr.updateSearchDistance = function(newValue) {geofs.ssr.maxSearchDistance = parseFloat(newValue);geofs.fx.rrt.updateUniforms();};
-            geofs.ssr.update = function() {geofs.ssr.isEnabled = !geofs.ssr.isEnabled;const toggleElement = document.getElementById("ssr");if (toggleElement) {toggleElement.setAttribute("class", "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.isEnabled ? " is-checked" : ""));}geofs.fx.rrt.updateUniforms();};
-            geofs.ssr.update1 = function() {geofs.ssr.sNorm = !geofs.ssr.sNorm;const normalsElement = document.getElementById("normals");if (normalsElement) {normalsElement.setAttribute("class", "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.sNorm ? " is-checked" : ""));}geofs.fx.rrt.updateUniforms();};
-            geofs.ssr.updateStrength = function(newValue) {geofs.ssr.strength = parseFloat(newValue);geofs.fx.rrt.updateUniforms();};
-            
-            // --- UI Injection (omitted for brevity, just update version number) ---
-            let elementSel = document.getElementsByClassName("geofs-preference-list")[0].getElementsByClassName("geofs-advanced")[0].getElementsByClassName("geofs-stopMousePropagation")[0];
-            
-            if (elementSel) {
-                let toggle = document.createElement("label");
-                toggle.id = "ssr";
-                toggle.className = "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.isEnabled ? " is-checked" : "");
-                toggle.innerHTML = '<input type="checkbox" class="mdl-switch__input" ' + (geofs.ssr.isEnabled ? 'checked' : '') + '><span class="mdl-switch__label">Screen Space Reflections (V0.2.4)</span>';
-                elementSel.appendChild(toggle);
-                toggle.addEventListener("click", geofs.ssr.update);
-
-                let normals = document.createElement("label");
-                normals.id = "normals";
-                normals.className = "mdl-switch mdl-js-switch mdl-js-ripple-effect mdl-js-ripple-effect--ignore-events is-upgraded" + (geofs.ssr.sNorm ? " is-checked" : "");
-                normals.innerHTML = '<input type="checkbox" class="mdl-switch__input" ' + (geofs.ssr.sNorm ? 'checked' : '') + '><span class="mdl-switch__label">Smooth Normals</span>';
-                elementSel.appendChild(normals);
-                normals.addEventListener("click", geofs.ssr.update1);
-
-                let strengthDiv = document.createElement("div");
-                strengthDiv.id = "strength";
-                strengthDiv.className = "slider";
-                strengthDiv.setAttribute("data-type", "slider");
-                strengthDiv.setAttribute("data-min", "0.0");
-                strengthDiv.setAttribute("data-max", "1.0");
-                strengthDiv.setAttribute("data-precision", "2");
-                strengthDiv.setAttribute("value", geofs.ssr.strength.toString());
-
-                strengthDiv.innerHTML = `<div><input type="range" min="0.0" max="1.0" step="0.01" value="${geofs.ssr.strength.toString()}" class="slider-input"></div><label>Reflection Strength</label>`;
-                elementSel.appendChild(strengthDiv);
-                
-                const strengthInput = strengthDiv.querySelector('.slider-input');
-                if (strengthInput) {
-                    strengthInput.addEventListener('input', function() {
-                        const newValue = this.value;
-                        geofs.ssr.updateStrength(newValue);
-                        strengthDiv.setAttribute("value", newValue);
-                    });
-                }
-                
-                let distanceDiv = document.createElement("div");
-                distanceDiv.id = "maxDistance";
-                distanceDiv.className = "slider";
-                distanceDiv.setAttribute("data-type", "slider");
-                distanceDiv.setAttribute("data-min", "1.0");
-                distanceDiv.setAttribute("data-max", "100.0"); 
-                distanceDiv.setAttribute("data-precision", "1");
-                distanceDiv.setAttribute("value", geofs.ssr.maxSearchDistance.toString());
-
-                distanceDiv.innerHTML = `<div><input type="range" min="1.0" max="100.0" step="0.5" value="${geofs.ssr.maxSearchDistance.toString()}" class="slider-input"></div><label>Reflection Search Distance (View Units)</label>`;
-                elementSel.appendChild(distanceDiv);
-
-                const distanceInput = distanceDiv.querySelector('.slider-input');
-                if (distanceInput) {
-                    distanceInput.addEventListener('input', function() {
-                        const newValue = this.value;
-                        geofs.ssr.updateSearchDistance(newValue);
-                        distanceDiv.setAttribute("value", newValue);
-                    });
-                }
-
-
-            } else {
-                console.warn("Could not find Advanced Settings list. UI controls will not appear.");
-            }
-
             
             geofs.fx.rrt.createShader = function() {
-                
-                if (geofs.fx.rrt.shader && geofs.api.viewer.scene.postProcessStages.contains(geofs.fx.rrt.shader)) {
-                    geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
-                    geofs.fx.rrt.shader.destroy(); 
+                // 1. Clean up any existing shader forcefully
+                if (geofs.fx.rrt.shader) {
+                    if (geofs.api.viewer.scene.postProcessStages.contains(geofs.fx.rrt.shader)) {
+                        geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
+                    }
+                    if (typeof geofs.fx.rrt.shader.destroy === 'function') {
+                        geofs.fx.rrt.shader.destroy(); 
+                    }
                     geofs.fx.rrt.shader = null;
                 }
                 
-                if (!geofs.aircraft || !geofs.aircraft.instance || !geofs.aircraft.instance.object3d.model) {
-                    console.warn("Cannot create SSR shader: Aircraft model is null.");
-                    return;
-                }
-                
-                const newPlaneModel = geofs.aircraft.instance.object3d.model._model;
-                currentPlaneModel = newPlaneModel;
-
-                geofs.fx.rrt.shader = new Cesium.PostProcessStage({
-                    fragmentShader: geofs["rrt.glsl"],
-                    uniforms: {
-                        isEnabled: function() { return geofs.ssr.isEnabled; },
-                        smoothNormals: function() { return geofs.ssr.sNorm; },
-                        strength: function() { return geofs.ssr.strength; },
-                        maxSearchDistance: function() { return geofs.ssr.maxSearchDistance; },
-                    }
-                });
-                
-                geofs.fx.rrt.shader.selected = [currentPlaneModel];
-                geofs.api.viewer.scene.postProcessStages.add(geofs.fx.rrt.shader);
-                console.log("SSR Shader attached and re-added to aircraft model.");
-            };
-            
-            geofs.fx.rrt.monitorAircraft = function() {
+                // 2. Create and attach new shader if the aircraft model exists
                 if (geofs.aircraft && geofs.aircraft.instance && geofs.aircraft.instance.object3d.model) {
                     const newPlaneModel = geofs.aircraft.instance.object3d.model._model;
+
+                    geofs.fx.rrt.shader = new Cesium.PostProcessStage({
+                        fragmentShader: geofs["rrt.glsl"],
+                        uniforms: {
+                            isEnabled: function() { return geofs.ssr.isEnabled; },
+                            smoothNormals: function() { return geofs.ssr.sNorm; },
+                            strength: function() { return geofs.ssr.strength; },
+                            maxSearchDistance: function() { return geofs.ssr.maxSearchDistance; },
+                        }
+                    });
                     
-                    if (newPlaneModel !== currentPlaneModel) {
-                        geofs.fx.rrt.createShader();
-                    }
+                    geofs.fx.rrt.shader.selected = [newPlaneModel];
+                    geofs.api.viewer.scene.postProcessStages.add(geofs.fx.rrt.shader);
+                    geofs.fx.rrt.updateUniforms();
+                    // Update the last aircraft model to prevent immediate re-triggering
+                    lastAircraftModel = newPlaneModel; 
+                    return true;
                 }
+                return false;
+            };
+            
+            geofs.ssr.setStrength = function(value) {
+                geofs.ssr.strength = Math.max(0, Math.min(1.0, parseFloat(value)));
+                geofs.fx.rrt.updateUniforms();
+                updateUICheckboxes();
+            };
+            
+            geofs.ssr.setDistance = function(value) {
+                geofs.ssr.maxSearchDistance = Math.max(1.0, parseFloat(value));
+                geofs.fx.rrt.updateUniforms();
+                updateUICheckboxes();
+            };
+            
+            geofs.ssr.toggleNormals = function() {
+                geofs.ssr.sNorm = !geofs.ssr.sNorm;
+                geofs.fx.rrt.updateUniforms();
+                updateUICheckboxes();
             };
 
-            // Initial setup (delayed for stability)
-            geofs.fx.rrt.createShader();
-            geofs.fx.rrt.updateUniforms(); 
-
-            // High-speed monitoring interval
-            setInterval(function(){
-                geofs.fx.rrt.monitorAircraft();
+            geofs.ssr.toggleSSR = function() {
+                geofs.ssr.isEnabled = !geofs.ssr.isEnabled;
                 geofs.fx.rrt.updateUniforms();
-            }, 100); 
+                updateUICheckboxes();
+            };
 
-            console.log("SSR Installed successfully.");
+
+            geofs.ssr.fixPlane = function() {
+                setTimeout(function() {
+                     if(geofs.fx.rrt.createShader()){
+                         console.log("SSR: Plane reflections re-attached successfully.");
+                     } else {
+                         console.warn("SSR: Plane reflections failed to re-attach. Trying again in 1 second.");
+                         setTimeout(geofs.ssr.fixPlane, 1000); // Failsafe retry
+                     }
+                }, 500);
+            };
+
+            setInterval(function() {
+                if (geofs.aircraft && geofs.aircraft.instance && geofs.aircraft.instance.object3d.model) {
+                    const currentModel = geofs.aircraft.instance.object3d.model._model;
+
+                    if (currentModel !== lastAircraftModel) {
+                        console.log("SSR Observer: Model change detected. Triggering fix.");
+                        geofs.ssr.fixPlane();
+                    }
+                }
+            }, 1000); 
+            
+            function createUI() {
+                const optionsMenu = document.getElementById('.geofs-preference-list');
+                if (!optionsMenu) {
+                    console.error("GeoFS Options menu structure not found for UI injection.");
+                    return;
+                }
+
+                const ssrMenuItem = document.createElement('div');
+                ssrMenuItem.className = 'menu-item';
+                ssrMenuItem.id = 'ssr-menu-item';
+                
+                ssrMenuItem.style.width = '100%';
+                ssrMenuItem.style.backgroundColor = '#202020'; // Dark background
+                ssrMenuItem.style.color = 'white';
+                ssrMenuItem.style.borderBottom = '1px solid #444';
+                ssrMenuItem.style.padding = '5px 10px';
+
+                ssrMenuItem.innerHTML = `
+                    <div style="cursor: pointer;" 
+                         onclick="geofs.menu.toggle('ssr-menu-content')">
+                        <label style="font-weight: bold; font-size: 1.1em;">Better Lighting (SSR)</label>
+                        <span style="float: right; font-size: 1.5em; line-height: 0.8;">&#9660;</span>
+                    </div>
+                `;
+
+                // Create the dropdown content area
+                const ssrMenuContent = document.createElement('div');
+                ssrMenuContent.id = 'ssr-menu-content';
+                ssrMenuContent.className = 'menu-content';
+                ssrMenuContent.style.display = 'none'; // Initially closed
+                ssrMenuContent.style.padding = '0 10px 10px 10px';
+                ssrMenuContent.style.backgroundColor = '#181818'; // Slightly darker inner
+
+                // Populate content (using geofs.ssr functions for callbacks)
+                ssrMenuContent.innerHTML = `
+                    <div class="menu-item" style="padding: 5px 0; border: none;">
+                        <label>Reflections Enabled</label>
+                        <input id="ssr-enabled-toggle" type="checkbox" onchange="geofs.ssr.toggleSSR()" ${geofs.ssr.isEnabled ? 'checked' : ''} style="float: right;">
+                    </div>
+                    <div class="menu-item" style="padding: 5px 0; border: none;">
+                        <label>Smooth Normals</label>
+                        <input id="ssr-normals-toggle" type="checkbox" onchange="geofs.ssr.toggleNormals()" ${geofs.ssr.sNorm ? 'checked' : ''} style="float: right;">
+                    </div>
+                    <div class="menu-item" style="padding: 5px 0; border: none;">
+                        <label>Strength (<span id="ssr-strength-display">${geofs.ssr.strength.toFixed(2)}</span>)</label>
+                        <input id="ssr-strength-slider" type="range" min="0.0" max="1.0" step="0.05" value="${geofs.ssr.strength}" 
+                            oninput="document.getElementById('ssr-strength-display').innerText = this.value; geofs.ssr.setStrength(this.value);" style="width: 100%; display: block;">
+                    </div>
+                     <div class="menu-item" style="padding: 5px 0; border: none;">
+                        <label>Distance (<span id="ssr-distance-display">${geofs.ssr.maxSearchDistance.toFixed(0)}</span>)</label>
+                        <input id="ssr-distance-slider" type="range" min="1.0" max="25.0" step="1.0" value="${geofs.ssr.maxSearchDistance}" 
+                            oninput="document.getElementById('ssr-distance-display').innerText = this.value; geofs.ssr.setDistance(this.value);" style="width: 100%; display: block;">
+                    </div>
+                `;
+                
+                
+                optionsMenu.appendChild(ssrMenuItem);
+                optionsMenu.appendChild(ssrMenuContent);
+
+                console.log("SSR: Reinforced UI controls added successfully.");
+            }
+
+            window.fix = geofs.ssr.fixPlane; // Keep manual shortcut as failsafe
+            geofs.fx.rrt.createShader();
+            
+            // DELAYED UI CREATION
+            setTimeout(function() {
+                createUI();
+                updateUICheckboxes(); 
+            }, UI_INIT_DELAY_MS - 1000); // UI_INIT_DELAY_MS is 15000ms. Subtract the initial 7000ms delay.
+
+            console.log(`Better Lighting Installed successfully.`);
 
         } catch (e) {
-            console.error("Fatal Error To The Code:", e);
+            console.error("Fatal Error during initialization:", e);
             alert("Install failed. Check console for red errors. The script may have started before the GeoFS engine.");
         }
-    }, 7000); 
+    }, 1000); 
 })();
