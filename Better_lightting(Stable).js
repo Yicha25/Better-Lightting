@@ -1,23 +1,24 @@
 // ==UserScript==
 // @name Better-Lighting
 // @namespace https://github.com/Yicha25/Better-Lightting/
-// @version 1.9b
+// @version 1.10
 // @match https://www.geo-fs.com/geofs.php?v=*
 // @match https://*.geo-fs.com/geofs.php*
 // @grant none
-// @updateURL https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
-// @downloadURL https://raw.githubusercontent.com/Yicha25/Better-Lightting/main/better-lightting.user.js
 // ==/UserScript==
 
 (function() {
-    console.log("Installing Better Lighting by Yicha");
+    console.log("Installing Better Lighting (Universal Model Fix)");
+
 
     const INITIAL_STRENGTH = 0.3;          
-    const INITIAL_MAX_DISTANCE = 700.0;
-    const INITIAL_SMOOTH_NORMALS = false;  
+    const INITIAL_MAX_DISTANCE = 1500.0;
+    const MAX_SLIDER_DISTANCE = 15000.0;
+    const INITIAL_SMOOTH_NORMALS = false;
     const UI_INIT_DELAY_MS = 1500; 
-
+    const WATCHDOG_INTERVAL_MS = 2000;
     let lastAircraftModel = null;
+    let isFixing = false;
 
     const originalShaderCore = `
         uniform sampler2D depthTexture;
@@ -196,12 +197,12 @@
         const distanceDisplay = document.getElementById('ssr-distance-display');
         const distanceSlider = document.getElementById('ssr-distance-slider');
 
-        if (enabled) enabled.checked = geofs.ssr.isEnabled;
-        if (normals) normals.checked = geofs.ssr.sNorm;
-        if (strengthDisplay) strengthDisplay.innerText = geofs.ssr.strength.toFixed(2);
-        if (strengthSlider) strengthSlider.value = geofs.ssr.strength;
-        if (distanceDisplay) distanceDisplay.innerText = geofs.ssr.maxSearchDistance.toFixed(0);
-        if (distanceSlider) distanceSlider.value = geofs.ssr.maxSearchDistance;
+        if (enabled && geofs.ssr) enabled.checked = geofs.ssr.isEnabled;
+        if (normals && geofs.ssr) normals.checked = geofs.ssr.sNorm;
+        if (strengthDisplay && geofs.ssr) strengthDisplay.innerText = geofs.ssr.strength.toFixed(2);
+        if (strengthSlider && geofs.ssr) strengthSlider.value = geofs.ssr.strength;
+        if (distanceDisplay && geofs.ssr) distanceDisplay.innerText = geofs.ssr.maxSearchDistance.toFixed(0);
+        if (distanceSlider && geofs.ssr) distanceSlider.value = geofs.ssr.maxSearchDistance;
     }
 
     setTimeout(function() {
@@ -216,19 +217,16 @@
                     maxSearchDistance: INITIAL_MAX_DISTANCE
                 };
             } else {
-                if (typeof geofs.ssr.isEnabled === 'undefined') { geofs.ssr.isEnabled = true; }
-                if (typeof geofs.ssr.sNorm === 'undefined') { geofs.ssr.sNorm = INITIAL_SMOOTH_NORMALS; }
-                if (typeof geofs.ssr.strength === 'undefined') { geofs.ssr.strength = INITIAL_STRENGTH; }
-                if (typeof geofs.ssr.maxSearchDistance === 'undefined') { geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE; }
-                if (geofs.ssr.maxSearchDistance < 100.0) {
-                     geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE;
-                }
+                if (typeof geofs.ssr.isEnabled === 'undefined') geofs.ssr.isEnabled = true;
+                if (typeof geofs.ssr.sNorm === 'undefined') geofs.ssr.sNorm = INITIAL_SMOOTH_NORMALS;
+                if (typeof geofs.ssr.strength === 'undefined') geofs.ssr.strength = INITIAL_STRENGTH;
+                if (typeof geofs.ssr.maxSearchDistance === 'undefined') geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE;
             }
 
             geofs.fx.rrt = geofs.fx.rrt || {};
             
             geofs.fx.rrt.updateUniforms = function() {
-                if (geofs.fx.rrt && geofs.fx.rrt.shader) {
+                if (geofs.fx.rrt && geofs.fx.rrt.shader && geofs.fx.rrt.shader.uniforms) {
                     geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
                     geofs.fx.rrt.shader.uniforms.smoothNormals = function() { return geofs.ssr.sNorm; };
                     geofs.fx.rrt.shader.uniforms.strength = function() { return geofs.ssr.strength; };
@@ -236,100 +234,114 @@
                 }
             };
             
-
             geofs.fx.rrt.createShader = function() {
                 if (geofs.fx.rrt.shader) {
                     if (geofs.api.viewer.scene.postProcessStages.contains(geofs.fx.rrt.shader)) {
                         geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
                     }
-                    if (typeof geofs.fx.rrt.shader.destroy === 'function') {
-                        geofs.fx.rrt.shader.destroy(); 
+                    if (!geofs.fx.rrt.shader.isDestroyed()) {
+                        geofs.fx.rrt.shader.destroy();
                     }
                     geofs.fx.rrt.shader = null;
                 }
                 
-                if (geofs.aircraft && geofs.aircraft.instance && geofs.aircraft.instance.object3d.model) {
-                    const newPlaneModel = geofs.aircraft.instance.object3d.model._model;
-                    geofs.fx.rrt.shader = new Cesium.PostProcessStage({
-                        fragmentShader: geofs["rrt.glsl"],
-                        uniforms: {
-                            isEnabled: function() { return geofs.ssr.isEnabled; },
-                            smoothNormals: function() { return geofs.ssr.sNorm; },
-                            strength: function() { return geofs.ssr.strength; },
-                            maxSearchDistance: function() { return geofs.ssr.maxSearchDistance; },
-                        }
-                    });
-                    
-                    geofs.fx.rrt.shader.selected = [newPlaneModel];
-                    geofs.api.viewer.scene.postProcessStages.add(geofs.fx.rrt.shader);
-                    geofs.fx.rrt.updateUniforms();
-                    lastAircraftModel = newPlaneModel; 
-                    return true;
-                }
-                return false;
+                let aircraft3d = geofs.aircraft.instance.object3d;
+                if (!aircraft3d || !aircraft3d.model) return false;
+
+                // Try both standard Cesium locations for the model primitive
+                const newPlaneModel = aircraft3d.model._model || aircraft3d.model;
+                
+                if (!newPlaneModel) return false;
+
+                geofs.fx.rrt.shader = new Cesium.PostProcessStage({
+                    fragmentShader: geofs["rrt.glsl"],
+                    uniforms: {
+                        isEnabled: function() { return geofs.ssr.isEnabled; },
+                        smoothNormals: function() { return geofs.ssr.sNorm; },
+                        strength: function() { return geofs.ssr.strength; },
+                        maxSearchDistance: function() { return geofs.ssr.maxSearchDistance; },
+                    }
+                });
+                
+                geofs.fx.rrt.shader.selected = [newPlaneModel];
+                geofs.api.viewer.scene.postProcessStages.add(geofs.fx.rrt.shader);
+                
+                lastAircraftModel = newPlaneModel; 
+                return true;
             };
             
-            // UI Handler functions
             geofs.ssr.setStrength = function(value) {
                 geofs.ssr.strength = Math.max(0, Math.min(1.0, parseFloat(value)));
-                geofs.fx.rrt.updateUniforms();
                 updateUICheckboxes();
             };
             
             geofs.ssr.setDistance = function(value) {
-                geofs.ssr.maxSearchDistance = Math.max(1.0, parseFloat(value));
-                geofs.fx.rrt.updateUniforms();
+                geofs.ssr.maxSearchDistance = Math.max(1.0, parseFloat(value)); 
                 updateUICheckboxes();
             };
             
             geofs.ssr.toggleNormals = function() {
                 geofs.ssr.sNorm = !geofs.ssr.sNorm;
-                geofs.fx.rrt.updateUniforms();
                 updateUICheckboxes();
             };
 
             geofs.ssr.toggleSSR = function() {
                 geofs.ssr.isEnabled = !geofs.ssr.isEnabled;
-                geofs.fx.rrt.updateUniforms();
                 updateUICheckboxes();
             };
 
-
             geofs.ssr.fixPlane = function() {
+                if (isFixing) return;
+                isFixing = true;
+                
                 setTimeout(function() {
                     if(geofs.fx.rrt.createShader()){
-                        console.log("Plane reflections re-attached successfully.");
+                        console.log("SSR: Model attached.");
                     } else {
-                        console.warn("SSR: Plane reflections failed to re-attach. Trying again in 1 second.");
-                        setTimeout(geofs.ssr.fixPlane, 1000);
+                        console.log("SSR: Model attachment failed. Will re-try.");
                     }
-                }, 500);
+                    isFixing = false;
+                }, 200);
             };
 
-            // Stability check loop
+
             setInterval(function() {
-                if (geofs.aircraft && geofs.aircraft.instance && geofs.aircraft.instance.object3d.model) {
-                    const currentModel = geofs.aircraft.instance.object3d.model._model;
+                try {
+                    if (!geofs.aircraft || !geofs.aircraft.instance || !geofs.aircraft.instance.object3d) {
+                         lastAircraftModel = null;
+                         return;
+                    }
+                    
+                    const aircraft3d = geofs.aircraft.instance.object3d;
+                    if (!aircraft3d.model) {
+                        lastAircraftModel = null;
+                        return;
+                    }
+
+                    // Robust check for model reference
+                    const currentModel = aircraft3d.model._model || aircraft3d.model;
+                    
+                    if (!currentModel) return;
 
                     if (currentModel !== lastAircraftModel) {
-                        console.log("SSR Observer: Model change detected. Triggering fix.");
+                        console.log("SSR Observer: Detected aircraft switch. Re-attaching shader...");
                         geofs.ssr.fixPlane();
                     }
+                } catch (e) {
                 }
-            }, 1000);
+            }, WATCHDOG_INTERVAL_MS);
             
             function createUI() {
                 const targetElement = document.querySelector('.geofs-preference-list .geofs-advanced .geofs-stopMousePropagation');
                 
-                if (!targetElement) {
-                    console.error("GeoFS Options menu structure not found for UI injection. Target: .geofs-advanced .geofs-stopMousePropagation");
-                    return;
-                }
+                if (!targetElement) return;
 
-                // --- UI Structure Injection ---
+                const existingTitle = Array.from(targetElement.querySelectorAll('h5')).find(el => el.textContent.includes('BETTER LIGHTING'));
+                if (existingTitle) return;
+
                 targetElement.insertAdjacentHTML('beforeend', `
-                    <h5 style="margin-top: 15px; margin-bottom: 10px; color: #f0ad4e; font-weight: bold;">
-                        BETTER LIGHTING (V1.9b)
+                    <h5 style="margin-top: 15px; margin-bottom: 10px; color: #ff7f7f; font-weight: bold;">
+                        BETTER LIGHTING (1.10)
                     </h5>
                     
                     <div class="geofs-option">
@@ -341,7 +353,7 @@
                     </div>
 
                     <div class="geofs-option">
-                        <span>Smooth Normals (Quality)</span>
+                        <span>Smooth Normals (Higher Quality Reflection)</span>
                         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="ssr-normals-toggle">
                             <input id="ssr-normals-toggle" type="checkbox" class="mdl-switch__input" 
                                 onchange="geofs.ssr.toggleNormals()" ${geofs.ssr.sNorm ? 'checked' : ''}>
@@ -349,7 +361,7 @@
                     </div>
 
                     <div class="geofs-option">
-                        <span style="font-weight: bold;">Reflection Strength</span>
+                        <span style="font-weight: bold;">Strength</span>
                         <span id="ssr-strength-display">${geofs.ssr.strength.toFixed(2)}</span>
                     </div>
                     <div class="geofs-option mdl-slider-container">
@@ -361,40 +373,34 @@
                     </div>
 
                     <div class="geofs-option">
-                        <span style="font-weight: bold;">Max Search Distance (m)</span>
+                        <span style="font-weight: bold;">Max Distance (meters)</span>
                         <span id="ssr-distance-display">${geofs.ssr.maxSearchDistance.toFixed(0)}</span>
                     </div>
                     <div class="geofs-option mdl-slider-container">
                         <input id="ssr-distance-slider" type="range" class="mdl-slider mdl-js-slider" 
-                            min="1.0" max="1000.0" step="1.0" value="${geofs.ssr.maxSearchDistance}" 
+                            min="1.0" max="${MAX_SLIDER_DISTANCE}" step="1.0" value="${geofs.ssr.maxSearchDistance}" 
                             oninput="geofs.ssr.setDistance(this.value);"
                             onmouseup="geofs.ssr.setDistance(this.value);"
                             ontouchend="geofs.ssr.setDistance(this.value);">
                     </div>
                 `);
 
-
                 if (window.componentHandler && typeof window.componentHandler.upgradeElements === 'function') {
                     window.componentHandler.upgradeElements(targetElement);
                 }
-                
-                console.log("UI controls successfully injected and functional.");
             }
 
-            window.fix = geofs.ssr.fixPlane;
-            geofs.fx.rrt.createShader();
+            geofs.ssr.fixPlane(); 
             
-            // DELAYED UI CREATION (Using a standard delay)
             setTimeout(function() {
                 createUI();
                 updateUICheckboxes();
             }, UI_INIT_DELAY_MS); 
 
-            console.log(`Better Lighting Installed successfully.`);
+            console.log(`Better Lighting Installed with 2-second auto-fix interval.`);
 
         } catch (e) {
-            console.error("Fatal Error during initialization:", e);
-            alert("Install failed. Check console for red errors. The script may have started before the GeoFS engine.");
+            console.error("Initialization Error:", e);
         }
     }, 1000); 
 })();
