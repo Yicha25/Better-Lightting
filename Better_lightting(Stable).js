@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name Better-Lighting-Original-GeoFS-SSR-Core
+// @name Better-Lighting
 // @namespace https://github.com/Yicha25/Better-Lightting/
 // @version 1.9b
 // @match https://www.geo-fs.com/geofs.php?v=*
