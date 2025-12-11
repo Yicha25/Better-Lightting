@@ -28,7 +28,7 @@ Install the Script Manager (e.g., Tampermonkey) if you haven't already.
 
 Click the Installation Link: Click the raw script file link below. Your script manager will automatically detect the file and prompt you for installation.
 
-Install Better Lighting (1.9b)
+Install Better Lighting (1.10)
 
 Confirm Installation: Review the script details in the manager and click Install.
 
@@ -49,3 +49,5 @@ Note: The script includes @updateURL tags, meaning Tampermonkey/Greasemonkey wil
 1.9 lag reduce
 
 1.9b UI redesign, new reflection render
+
+1.10 Bug fix
