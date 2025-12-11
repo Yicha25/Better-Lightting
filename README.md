@@ -28,10 +28,19 @@ Install the Script Manager (e.g., Tampermonkey) if you haven't already.
 
 Click the Installation Link: Click the raw script file link below. Your script manager will automatically detect the file and prompt you for installation.
 
-Install Better Lighting (0.1.8)
+Install Better Lighting (1.9b)
 
 Confirm Installation: Review the script details in the manager and click Install.
 
 Restart GeoFS: Refresh or reload the GeoFS page.
 
 Note: The script includes @updateURL tags, meaning Tampermonkey/Greasemonkey will automatically check for and prompt you to install future updates.
+
+# Change log
+
+1.0 release
+1.1 ~ 1.6 render update
+1.7 bug fix
+1.8 UI redesign
+1.9 lag reduce
+1.9b UI redesign, new reflection render
