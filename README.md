@@ -39,8 +39,13 @@ Note: The script includes @updateURL tags, meaning Tampermonkey/Greasemonkey wil
 # Change log
 
 1.0 release
+
 1.1 ~ 1.6 render update
+
 1.7 bug fix
+
 1.8 UI redesign
+
 1.9 lag reduce
+
 1.9b UI redesign, new reflection render
