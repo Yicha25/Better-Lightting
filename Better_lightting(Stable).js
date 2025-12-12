@@ -10,16 +10,19 @@
 (function() {
     console.log("Installing Better Lighting (Universal Model Fix)");
 
-
+    // --- CONFIGURATION ---
     const INITIAL_STRENGTH = 0.3;          
     const INITIAL_MAX_DISTANCE = 1500.0;
+    const INITIAL_RESOLUTION = 0.5;
     const MAX_SLIDER_DISTANCE = 15000.0;
     const INITIAL_SMOOTH_NORMALS = false;
     const UI_INIT_DELAY_MS = 1500; 
     const WATCHDOG_INTERVAL_MS = 2000;
+
     let lastAircraftModel = null;
     let isFixing = false;
 
+    
     const originalShaderCore = `
         uniform sampler2D depthTexture;
         uniform sampler2D colorTexture;
@@ -28,6 +31,7 @@
         uniform bool isEnabled;
         uniform float strength;
         uniform float maxSearchDistance;
+        uniform float resolution; 
         varying vec2 v_textureCoordinates;
         #ifdef GL_OES_standard_derivatives
             #extension GL_OES_standard_derivatives : enable
@@ -76,7 +80,7 @@
             vec3 normalInCamera = getNormalXEdge(posInCamera.xyz, depthU, depthD, depthL, depthR, pixelSize);
             
             float maxDistance = maxSearchDistance; 
-            float resolution = 0.5;
+            float currentResolution = resolution; 
             int steps = 5;
             float thickness = 0.1;
 
@@ -112,7 +116,7 @@
             float deltaX = endFrag.x - startFrag.x;
             float deltaY = endFrag.y - startFrag.y;
             float useX = abs(deltaX) >= abs(deltaY) ? 1.0 : 0.0;
-            float delta = mix(abs(deltaY), abs(deltaX), useX) * clamp(resolution, 0.0, 1.0);
+            float delta = mix(abs(deltaY), abs(deltaX), useX) * clamp(currentResolution, 0.0, 1.0); 
 
             vec2 increment = vec2(deltaX, deltaY) / max(delta, 0.001);
 
@@ -196,6 +200,8 @@
         const strengthSlider = document.getElementById('ssr-strength-slider');
         const distanceDisplay = document.getElementById('ssr-distance-display');
         const distanceSlider = document.getElementById('ssr-distance-slider');
+        const resolutionDisplay = document.getElementById('ssr-resolution-display'); 
+        const resolutionSlider = document.getElementById('ssr-resolution-slider');   
 
         if (enabled && geofs.ssr) enabled.checked = geofs.ssr.isEnabled;
         if (normals && geofs.ssr) normals.checked = geofs.ssr.sNorm;
@@ -203,38 +209,48 @@
         if (strengthSlider && geofs.ssr) strengthSlider.value = geofs.ssr.strength;
         if (distanceDisplay && geofs.ssr) distanceDisplay.innerText = geofs.ssr.maxSearchDistance.toFixed(0);
         if (distanceSlider && geofs.ssr) distanceSlider.value = geofs.ssr.maxSearchDistance;
+        
+        if (resolutionDisplay && geofs.ssr) resolutionDisplay.innerText = geofs.ssr.resolution.toFixed(2);
+        if (resolutionSlider && geofs.ssr) resolutionSlider.value = geofs.ssr.resolution;
     }
 
     setTimeout(function() {
         try {
             geofs["rrt.glsl"] = originalShaderCore; 
 
+            
             if (typeof geofs.ssr === 'undefined') {
                 geofs.ssr = {
                     isEnabled: true,
                     sNorm: INITIAL_SMOOTH_NORMALS,
                     strength: INITIAL_STRENGTH,
-                    maxSearchDistance: INITIAL_MAX_DISTANCE
+                    maxSearchDistance: INITIAL_MAX_DISTANCE,
+                    resolution: INITIAL_RESOLUTION 
                 };
             } else {
+                
                 if (typeof geofs.ssr.isEnabled === 'undefined') geofs.ssr.isEnabled = true;
                 if (typeof geofs.ssr.sNorm === 'undefined') geofs.ssr.sNorm = INITIAL_SMOOTH_NORMALS;
                 if (typeof geofs.ssr.strength === 'undefined') geofs.ssr.strength = INITIAL_STRENGTH;
                 if (typeof geofs.ssr.maxSearchDistance === 'undefined') geofs.ssr.maxSearchDistance = INITIAL_MAX_DISTANCE;
+                if (typeof geofs.ssr.resolution === 'undefined') geofs.ssr.resolution = INITIAL_RESOLUTION; 
             }
 
             geofs.fx.rrt = geofs.fx.rrt || {};
             
             geofs.fx.rrt.updateUniforms = function() {
                 if (geofs.fx.rrt && geofs.fx.rrt.shader && geofs.fx.rrt.shader.uniforms) {
+                    
                     geofs.fx.rrt.shader.uniforms.isEnabled = function() { return geofs.ssr.isEnabled; };
                     geofs.fx.rrt.shader.uniforms.smoothNormals = function() { return geofs.ssr.sNorm; };
                     geofs.fx.rrt.shader.uniforms.strength = function() { return geofs.ssr.strength; };
                     geofs.fx.rrt.shader.uniforms.maxSearchDistance = function() { return geofs.ssr.maxSearchDistance; };
+                    geofs.fx.rrt.shader.uniforms.resolution = function() { return geofs.ssr.resolution; }; 
                 }
             };
             
             geofs.fx.rrt.createShader = function() {
+                
                 if (geofs.fx.rrt.shader) {
                     if (geofs.api.viewer.scene.postProcessStages.contains(geofs.fx.rrt.shader)) {
                         geofs.api.viewer.scene.postProcessStages.remove(geofs.fx.rrt.shader);
@@ -245,14 +261,16 @@
                     geofs.fx.rrt.shader = null;
                 }
                 
+                
                 let aircraft3d = geofs.aircraft.instance.object3d;
                 if (!aircraft3d || !aircraft3d.model) return false;
 
-                // Try both standard Cesium locations for the model primitive
+                
                 const newPlaneModel = aircraft3d.model._model || aircraft3d.model;
                 
                 if (!newPlaneModel) return false;
 
+                
                 geofs.fx.rrt.shader = new Cesium.PostProcessStage({
                     fragmentShader: geofs["rrt.glsl"],
                     uniforms: {
@@ -260,6 +278,7 @@
                         smoothNormals: function() { return geofs.ssr.sNorm; },
                         strength: function() { return geofs.ssr.strength; },
                         maxSearchDistance: function() { return geofs.ssr.maxSearchDistance; },
+                        resolution: function() { return geofs.ssr.resolution; }, 
                     }
                 });
                 
@@ -270,6 +289,7 @@
                 return true;
             };
             
+            
             geofs.ssr.setStrength = function(value) {
                 geofs.ssr.strength = Math.max(0, Math.min(1.0, parseFloat(value)));
                 updateUICheckboxes();
@@ -277,6 +297,11 @@
             
             geofs.ssr.setDistance = function(value) {
                 geofs.ssr.maxSearchDistance = Math.max(1.0, parseFloat(value)); 
+                updateUICheckboxes();
+            };
+
+            geofs.ssr.setResolution = function(value) { 
+                geofs.ssr.resolution = Math.max(0.1, Math.min(1.0, parseFloat(value))); 
                 updateUICheckboxes();
             };
             
@@ -304,7 +329,7 @@
                 }, 200);
             };
 
-
+            
             setInterval(function() {
                 try {
                     if (!geofs.aircraft || !geofs.aircraft.instance || !geofs.aircraft.instance.object3d) {
@@ -318,7 +343,7 @@
                         return;
                     }
 
-                    // Robust check for model reference
+                    
                     const currentModel = aircraft3d.model._model || aircraft3d.model;
                     
                     if (!currentModel) return;
@@ -328,20 +353,23 @@
                         geofs.ssr.fixPlane();
                     }
                 } catch (e) {
+                    
                 }
             }, WATCHDOG_INTERVAL_MS);
+            
             
             function createUI() {
                 const targetElement = document.querySelector('.geofs-preference-list .geofs-advanced .geofs-stopMousePropagation');
                 
                 if (!targetElement) return;
 
+                
                 const existingTitle = Array.from(targetElement.querySelectorAll('h5')).find(el => el.textContent.includes('BETTER LIGHTING'));
                 if (existingTitle) return;
 
                 targetElement.insertAdjacentHTML('beforeend', `
-                    <h5 style="margin-top: 15px; margin-bottom: 10px; color: #ff7f7f; font-weight: bold;">
-                        BETTER LIGHTING (1.10)
+                    <h5 style="margin-top: 15px; margin-bottom: 10px; color: #f0ad4e; font-weight: bold;">
+                        BETTER LIGHTING (V1.9h - Clean)
                     </h5>
                     
                     <div class="geofs-option">
@@ -353,7 +381,7 @@
                     </div>
 
                     <div class="geofs-option">
-                        <span>Smooth Normals (Higher Quality Reflection)</span>
+                        <span>Smooth Normals (Higher Quality)</span>
                         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="ssr-normals-toggle">
                             <input id="ssr-normals-toggle" type="checkbox" class="mdl-switch__input" 
                                 onchange="geofs.ssr.toggleNormals()" ${geofs.ssr.sNorm ? 'checked' : ''}>
@@ -370,6 +398,18 @@
                             oninput="geofs.ssr.setStrength(this.value);"
                             onmouseup="geofs.ssr.setStrength(this.value);"
                             ontouchend="geofs.ssr.setStrength(this.value);">
+                    </div>
+
+                    <div class="geofs-option">
+                        <span style="font-weight: bold;">Resolution (Lag/Quality)</span>
+                        <span id="ssr-resolution-display">${geofs.ssr.resolution.toFixed(2)}</span>
+                    </div>
+                    <div class="geofs-option mdl-slider-container">
+                        <input id="ssr-resolution-slider" type="range" class="mdl-slider mdl-js-slider" 
+                            min="0.1" max="1.0" step="0.1" value="${geofs.ssr.resolution}" 
+                            oninput="geofs.ssr.setResolution(this.value);"
+                            onmouseup="geofs.ssr.setResolution(this.value);"
+                            ontouchend="geofs.ssr.setResolution(this.value);">
                     </div>
 
                     <div class="geofs-option">
@@ -390,6 +430,7 @@
                 }
             }
 
+            
             geofs.ssr.fixPlane(); 
             
             setTimeout(function() {
