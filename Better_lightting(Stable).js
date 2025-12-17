@@ -8,7 +8,7 @@
 // ==/UserScript==
 
 (function() {
-    console.log("Installing Better Lighting (Universal Model Fix)");
+    console.log("Installing Better Lighting");
 
     // --- CONFIGURATION ---
     const INITIAL_STRENGTH = 0.3;          
@@ -321,9 +321,9 @@
                 
                 setTimeout(function() {
                     if(geofs.fx.rrt.createShader()){
-                        console.log("SSR: Model attached.");
+                        console.log("Model attached.");
                     } else {
-                        console.log("SSR: Model attachment failed. Will re-try.");
+                        console.log("Model attachment failed. Will re-try.");
                     }
                     isFixing = false;
                 }, 200);
@@ -349,7 +349,7 @@
                     if (!currentModel) return;
 
                     if (currentModel !== lastAircraftModel) {
-                        console.log("SSR Observer: Detected aircraft switch. Re-attaching shader...");
+                        console.log("Detected aircraft switch. Re-attaching shader");
                         geofs.ssr.fixPlane();
                     }
                 } catch (e) {
@@ -369,7 +369,7 @@
 
                 targetElement.insertAdjacentHTML('beforeend', `
                     <h5 style="margin-top: 15px; margin-bottom: 10px; color: #f0ad4e; font-weight: bold;">
-                        BETTER LIGHTING (V1.9h - Clean)
+                        BETTER LIGHTING (V1.10)
                     </h5>
                     
                     <div class="geofs-option">
@@ -438,7 +438,7 @@
                 updateUICheckboxes();
             }, UI_INIT_DELAY_MS); 
 
-            console.log(`Better Lighting Installed with 2-second auto-fix interval.`);
+            console.log(`Better Lighting Installed.`);
 
         } catch (e) {
             console.error("Initialization Error:", e);
