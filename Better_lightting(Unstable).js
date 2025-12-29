@@ -39,17 +39,14 @@
 
             vec3 pos = getViewPos(v_textureCoordinates, depth);
             
-            // 1. RECONSTRUCT SMOOTH NORMALS
             vec2 sz = 1.0 / czm_viewport.zw;
             vec3 p1 = getViewPos(v_textureCoordinates + vec2(sz.x * 2.0, 0.0), czm_readDepth(depthTexture, v_textureCoordinates + vec2(sz.x * 2.0, 0.0)));
             vec3 p2 = getViewPos(v_textureCoordinates + vec2(0.0, sz.y * 2.0), czm_readDepth(depthTexture, v_textureCoordinates + vec2(0.0, sz.y * 2.0)));
             vec3 norm = normalize(cross(p1 - pos, p2 - pos));
 
-            // 2. THE GEOMETRY FIX: Start the ray slightly ABOVE the surface (Expansion)
             vec3 reflectDir = normalize(reflect(normalize(pos), norm));
             vec3 rayPos = pos + (norm * 0.2); // Push 20cm away from fuselage to prevent holes
             
-            // 3. ADAPTIVE RAY MARCHING
             vec3 step = reflectDir * max(0.1, abs(pos.z) / 90.0);
             vec2 hitUV;
             bool hit = false;
@@ -64,7 +61,6 @@
                 float sceneD = czm_readDepth(depthTexture, hitUV);
                 vec3 sceneP = getViewPos(hitUV, sceneD);
 
-                // Check for intersection with a 'safety buffer'
                 if(rayPos.z < sceneP.z && abs(rayPos.z - sceneP.z) < (1.5 + abs(pos.z)*0.04)) {
                     hit = true; break;
                 }
@@ -72,7 +68,6 @@
 
             vec4 base = texture2D(colorTexture, v_textureCoordinates);
             if(hit) {
-                // Fresnel for metal look
                 float fresnel = 0.2 + 0.8 * pow(1.0 - max(dot(norm, -normalize(pos)), 0.0), 3.0);
                 vec4 refl = texture2D(colorTexture, hitUV);
                 gl_FragColor = mix(base, refl, strength * fresnel);
@@ -82,7 +77,6 @@
         }
     `;
 
-    // --- UI INJECTION (MENU RESTORED) ---
     function injectUI() {
         if (document.getElementById('ssr-ui-v10')) return;
         const panel = document.querySelector('.geofs-preference-list .geofs-advanced .geofs-stopMousePropagation');
@@ -90,7 +84,7 @@
 
         panel.insertAdjacentHTML('beforeend', `
             <div id="ssr-ui-v10" style="margin-top: 15px; border-top: 1px solid #666;">
-                <h5 style="color: #4effbf; font-weight: bold; padding-top: 10px;">RTX V10 (FIXED)</h5>
+                <h5 style="color: #4effbf; font-weight: bold; padding-top: 10px;">Better Lighting(UNSTABLE)</h5>
                 <div class="geofs-option">
                     <span>Enabled</span>
                     <label class="mdl-switch mdl-js-switch" for="sw-v10">
@@ -108,7 +102,6 @@
         if (window.componentHandler) window.componentHandler.upgradeElements(panel);
     }
 
-    // --- INITIALIZATION ---
     window.geofs.ssr = CONFIG;
     let lastModel = null;
 
