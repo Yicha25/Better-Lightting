@@ -116,47 +116,74 @@
             this.state = { isEnabled: true, strength: 0.8, reflectivity: 0.3, detection: 1.1, distortion: 0.4, contact: 0.05, maxDist: 6000 };
             this.lastModel = null;
             this.stage = null;
+            this.isApplying = false;
+        }
+
+        findModel() {
+            try {
+                const ac = window.geofs?.aircraft?.instance;
+                if (!ac) return null;
+                let m = ac.object3d?.model?._model || ac.object3d?.model;
+                if (!m || typeof m.render !== 'function') m = ac.object3d?.model?._models?.[0] || m;
+                const isReady = m && (m.ready || m._ready || (m.primitive && m.primitive.ready));
+                return isReady ? m : null;
+            } catch(e) { return null; }
         }
 
         init() {
             setInterval(() => {
-                const model = geofs.aircraft?.instance?.object3d?.model?._model || geofs.aircraft?.instance?.object3d?.model;
-                if (model && model !== this.lastModel) this.apply(model);
+                const currentModel = this.findModel();
+                
+                if (currentModel && currentModel !== this.lastModel && !this.isApplying) {
+                    this.isApplying = true;
+                    console.log("Better Lighting: Aircraft mesh detected. Waiting for textures...");
+                    
+                    setTimeout(() => {
+                        this.apply(currentModel);
+                        this.isApplying = false;
+                    }, 5000);
+                }
                 this.ui();
             }, 2000);
         }
 
         apply(model) {
-            if (this.stage) geofs.api.viewer.scene.postProcessStages.remove(this.stage);
-            this.stage = new Cesium.PostProcessStage({
-                fragmentShader: SSRT_SHADER,
-                uniforms: {
-                    isEnabled: () => this.state.isEnabled,
-                    strength: () => this.state.strength,
-                    reflectivity: () => this.state.reflectivity,
-                    detectionSensitivity: () => this.state.detection,
-                    distortion: () => this.state.distortion,
-                    contactBias: () => this.state.contact,
-                    maxSearchDistance: () => this.state.maxDist
-                }
-            });
-            this.stage.selected = [model];
-            geofs.api.viewer.scene.postProcessStages.add(this.stage);
-            this.lastModel = model;
+            if (this.stage) {
+                geofs.api.viewer.scene.postProcessStages.remove(this.stage);
+                this.stage = null;
+            }
+
+            try {
+                this.stage = new Cesium.PostProcessStage({
+                    fragmentShader: SSRT_SHADER,
+                    uniforms: {
+                        isEnabled: () => this.state.isEnabled, strength: () => this.state.strength,
+                        reflectivity: () => this.state.reflectivity, detectionSensitivity: () => this.state.detection,
+                        distortion: () => this.state.distortion, contactBias: () => this.state.contact,
+                        maxSearchDistance: () => this.state.maxDist
+                    }
+                });
+                
+                this.stage.selected = [model];
+                geofs.api.viewer.scene.postProcessStages.add(this.stage);
+                this.lastModel = model;
+                console.log("Better Lighting: Shader successfully attached to model.");
+            } catch (e) {
+                console.warn("Better Lighting: Failed to apply stage:", e);
+                this.lastModel = null;
+            }
         }
 
         ui() {
             const target = document.querySelector('.geofs-preference-list .geofs-advanced .geofs-stopMousePropagation');
             if (!target || document.getElementById('ssrt-ui')) return;
-
             const uiHTML = `
                 <div id="ssrt-ui" style="border-top: 1px solid #555; margin-top: 10px; padding-top: 10px;">
                     <h5 style="color: #00d4ff; font-weight: bold;">Better Lighting</h5>
                     <div class="geofs-option"><span>Reflect Strength</span><input id="sl_str" type="range" class="mdl-slider" min="0" max="1" step="0.01" value="${this.state.strength}"></div>
-                    <div class="geofs-option"><span>Contact Gap (Lower = Closer)</span><input id="sl_con" type="range" class="mdl-slider" min="0.01" max="0.5" step="0.01" value="${this.state.contact}"></div>
+                    <div class="geofs-option"><span>Contact Gap</span><input id="sl_con" type="range" class="mdl-slider" min="0.01" max="0.5" step="0.01" value="${this.state.contact}"></div>
                     <div class="geofs-option"><span>Wave Distortion</span><input id="sl_dist" type="range" class="mdl-slider" min="0" max="1" step="0.01" value="${this.state.distortion}"></div>
-                </div>
-            `;
+                </div>`;
             target.insertAdjacentHTML('beforeend', uiHTML);
             document.getElementById('sl_str').oninput = (e) => this.state.strength = parseFloat(e.target.value);
             document.getElementById('sl_con').oninput = (e) => this.state.contact = parseFloat(e.target.value);
@@ -165,5 +192,10 @@
         }
     }
 
-    if (window.geofs) new SSRTManager().init();
+    const startup = setInterval(() => {
+        if (window.Cesium && window.geofs?.api?.viewer) {
+            clearInterval(startup);
+            new SSRTManager().init();
+        }
+    }, 1000);
 })();
