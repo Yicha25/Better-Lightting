@@ -136,7 +136,7 @@
                 
                 if (currentModel && currentModel !== this.lastModel && !this.isApplying) {
                     this.isApplying = true;
-                    console.log("Better Lighting: Aircraft mesh detected. Waiting for textures...");
+                    console.log("Please wait... (Reflection should load in like less in 10 second depent on how long the plane model load.)");
                     
                     setTimeout(() => {
                         this.apply(currentModel);
@@ -167,9 +167,9 @@
                 this.stage.selected = [model];
                 geofs.api.viewer.scene.postProcessStages.add(this.stage);
                 this.lastModel = model;
-                console.log("Better Lighting: Shader successfully attached to model.");
+                console.log("Shader successfully attached to model.");
             } catch (e) {
-                console.warn("Better Lighting: Failed to apply stage:", e);
+                console.warn("Failed to apply stage for reflection:", e);
                 this.lastModel = null;
             }
         }
