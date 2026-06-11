@@ -13,7 +13,7 @@
     // --- CONFIGURATION ---
     const INITIAL_STRENGTH = 0.3;          
     const INITIAL_MAX_DISTANCE = 1500.0;
-    const INITIAL_RESOLUTION = 0.5;
+    const INITIAL_RESOLUTION = 0.2;
     const MAX_SLIDER_DISTANCE = 15000.0;
     const INITIAL_SMOOTH_NORMALS = false;
     const UI_INIT_DELAY_MS = 1500; 
@@ -301,7 +301,7 @@
             };
 
             geofs.ssr.setResolution = function(value) { 
-                geofs.ssr.resolution = Math.max(0.1, Math.min(4.0, parseFloat(value))); 
+                geofs.ssr.resolution = Math.max(0.01, Math.min(2.0, parseFloat(value))); 
                 updateUICheckboxes();
             };
             
