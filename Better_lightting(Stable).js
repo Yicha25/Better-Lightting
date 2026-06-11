@@ -301,7 +301,7 @@
             };
 
             geofs.ssr.setResolution = function(value) { 
-                geofs.ssr.resolution = Math.max(0.1, Math.min(1.0, parseFloat(value))); 
+                geofs.ssr.resolution = Math.max(0.1, Math.min(4.0, parseFloat(value))); 
                 updateUICheckboxes();
             };
             
