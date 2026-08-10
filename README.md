@@ -1,3 +1,7 @@
+# ONLY WORK IN GEOFS 3.9, IT WILL CRASH IN 4.0, AND I'M NOT THINKING ABOUT MAKING IT WORK IN 4.0 BECAUSE THERE IS PBR
+
+
+
 # Better Lighting
 
 Enhances the visual quality of aircraft models in GeoFS by introducing Screen Space Reflections (SSR). This adds realistic, dynamic reflections of the sky, ground, and environment onto your aircraft's surfaces, significantly improving the look and feel of the simulation.
