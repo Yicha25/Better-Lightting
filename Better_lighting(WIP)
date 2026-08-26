@@ -1,144 +1,147 @@
 // ==UserScript==
-// @name         Better_lighting
-// @namespace    http://tampermonkey.net/
-// @description  basically god rays
-// @match        https://*.geo-fs.com/geofs.php*
-// @grant        none
+// @name         Better_Lighting(WIP)
+// @namespace    http://tampermonkey.net/
+// @description  god rays
+// @author       Yicha
+// @match        https://*.geo-fs.com/geofs.php*
+// @grant        none
 // ==/UserScript==
 
+
+
 (function() {
-    'use strict';
 
-    const initInterval = setInterval(() => {
-        if (window.geofs && window.geofs.api && window.geofs.api.viewer && window.Cesium) {
-            clearInterval(initInterval);
-            console.log("[GeoFS Modular Realism] Injecting cloud-scattered raymarched golden lighting...");
-            injectLightingEngine();
-        }
-    }, 2000);
+    'use strict';
 
-    function injectLightingEngine() {
-        const viewer = geofs.api.viewer;
-        const scene = viewer.scene;
+    const initInterval = setInterval(() => {
 
-        const lightingShader = `
-            uniform sampler2D colorTexture;
-            uniform sampler2D depthTexture;
-            varying vec2 v_textureCoordinates;
+        if (window.geofs && window.geofs.api && window.geofs.api.viewer && window.Cesium) {
+            clearInterval(initInterval);
+            console.log("WIP so it may have alot of bugs.");
+            injectLightingEngine();
 
-            float noise(vec2 uv) {
-                return fract(52.9829189 * fract(dot(uv, vec2(0.06711056, 0.00583715))));
-            }
+        }
 
-            float miePhase(float cosAngle, float g) {
-                float g2 = g * g;
-                return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * cosAngle, 1.5));
-            }
+    }, 2000);
 
-            vec3 calculateLightEmission(vec2 uv, sampler2D colorTex, sampler2D depthTex) {
-                float centerDepth = czm_readDepth(depthTex, uv);
-                if (centerDepth >= 0.9999) return vec3(0.0);
 
-                vec3 centerColor = texture2D(colorTex, uv).rgb;
-                float maxChannel = max(centerColor.r, max(centerColor.g, centerColor.b));
-                float minChannel = min(centerColor.r, min(centerColor.g, centerColor.b));
-                float sat = maxChannel - minChannel;
-                
-                if (maxChannel < 0.82 && sat < 0.35) return vec3(0.0);
 
-                vec3 bloom = vec3(0.0);
-                vec2 offsets[8];
-                offsets[0] = vec2( 1.0,  0.0); offsets[1] = vec2(-1.0,  0.0);
-                offsets[2] = vec2( 0.0,  1.0); offsets[3] = vec2( 0.0, -1.0);
-                offsets[4] = vec2( 0.7,  0.7); offsets[5] = vec2(-0.7,  0.7);
-                offsets[6] = vec2( 0.7, -0.7); offsets[7] = vec2(-0.7, -0.7);
+    function injectLightingEngine() {
+        const viewer = geofs.api.viewer;
+        const scene = viewer.scene;
 
-                for (int i = 0; i < 8; i++) {
-                    vec2 sampleUV = uv + offsets[i] * 0.0025;
-                    if (czm_readDepth(depthTex, sampleUV) < 0.9999) {
-                        bloom += max(texture2D(colorTex, sampleUV).rgb - vec3(0.75), vec3(0.0));
-                    }
-                }
-                return clamp(bloom * 0.18, vec3(0.0), vec3(0.4)); 
-            }
 
-            void main(void) {
-                vec2 uv = v_textureCoordinates;
-                vec4 baseTex = texture2D(colorTexture, uv);
-                vec3 color = baseTex.rgb;
+        const lightingShader = `
+            uniform sampler2D colorTexture;
+            uniform sampler2D depthTexture;
+            varying vec2 v_textureCoordinates;
 
-                color += calculateLightEmission(uv, colorTexture, depthTexture);
+            float noise(vec2 uv) {
+                return fract(52.9829189 * fract(dot(uv, vec2(0.06711056, 0.00583715))));
 
-                float sunElevation = dot(normalize(czm_viewerPositionWC), normalize(czm_sunPositionWC));
-                bool isDaytime = sunElevation > -0.08;
+            }
 
-                vec4 sunEC = vec4(czm_sunDirectionEC, 0.0);
-                vec4 sunPositionClip = czm_projection * sunEC;
-                vec3 sunPosNDC = sunPositionClip.xyz / sunPositionClip.w;
-                vec2 sunUV = sunPosNDC.xy * 0.5 + 0.5;
-                float sunInFront = step(0.0, sunPositionClip.z);
+            float miePhase(float cosAngle, float g) {
+                float g2 = g * g;
+                return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * cosAngle, 1.5));
+            }
+            vec3 calculateLightEmission(vec2 uv, sampler2D colorTex, sampler2D depthTex) {
+                float centerDepth = czm_readDepth(depthTex, uv);
+                if (centerDepth >= 0.9999) return vec3(0.0);
 
-                float sunVisibility = 1.0;
-                bool sunOnScreen = (sunUV.x >= 0.0 && sunUV.x <= 1.0 && sunUV.y >= 0.0 && sunUV.y <= 1.0);
+                vec3 centerColor = texture2D(colorTex, uv).rgb;
+                float maxChannel = max(centerColor.r, max(centerColor.g, centerColor.b));
+                float minChannel = min(centerColor.r, min(centerColor.g, centerColor.b));
+                float sat = maxChannel - minChannel;
+                if (maxChannel < 0.82 && sat < 0.35) return vec3(0.0);
+                vec3 bloom = vec3(0.0);
+                vec2 offsets[8];
+                offsets[0] = vec2( 1.0,  0.0); offsets[1] = vec2(-1.0,  0.0);
+                offsets[2] = vec2( 0.0,  1.0); offsets[3] = vec2( 0.0, -1.0);
+                offsets[4] = vec2( 0.7,  0.7); offsets[5] = vec2(-0.7,  0.7);
+                offsets[6] = vec2( 0.7, -0.7); offsets[7] = vec2(-0.7, -0.7);
+                for (int i = 0; i < 8; i++) {
+                    vec2 sampleUV = uv + offsets[i] * 0.0025;
+                    if (czm_readDepth(depthTex, sampleUV) < 0.9999) {
+                        bloom += max(texture2D(colorTex, sampleUV).rgb - vec3(0.75), vec3(0.0));
+                    }
+                }
+                return clamp(bloom * 0.18, vec3(0.0), vec3(0.4)); 
+            }
 
-                if (sunOnScreen) {
-                    float d0 = czm_readDepth(depthTexture, clamp(sunUV, 0.0, 1.0));
-                    sunVisibility = smoothstep(0.998, 0.9999, d0);
-                }
 
-                if (sunInFront > 0.5 && isDaytime) {
-                    float dist = length(uv - sunUV);
-                    
-                    float cosAngle = dot(normalize(vec3(uv - sunUV, 1.0)), vec3(0.0, 0.0, 1.0));
-                    float sunGlare = miePhase(cosAngle, 0.28) * 0.015; 
-                    sunGlare += exp(-dist * 1.4) * 0.05;
-                    sunGlare *= sunVisibility;
+            void main(void) {
+                vec2 uv = v_textureCoordinates;
+                vec4 baseTex = texture2D(colorTexture, uv);
+                vec3 color = baseTex.rgb;
 
-                    float jitter = noise(gl_FragCoord.xy);
-                    float lightShafts = 0.0;
-                    const int SAMPLES = 36;
-                    
-                    vec2 deltaUV = (uv - sunUV) / float(SAMPLES);
-                    vec2 currentUV = uv - deltaUV * jitter;
+                color += calculateLightEmission(uv, colorTexture, depthTexture);
 
-                    float weight = 0.06; 
-                    float decay = 0.96;
+                float sunElevation = dot(normalize(czm_viewerPositionWC), normalize(czm_sunPositionWC));
+                bool isDaytime = sunElevation > -0.08;
+                vec4 sunEC = vec4(czm_sunDirectionEC, 0.0);
+                vec4 sunPositionClip = czm_projection * sunEC;
+                vec3 sunPosNDC = sunPositionClip.xyz / sunPositionClip.w;
+                vec2 sunUV = sunPosNDC.xy * 0.5 + 0.5;
+                float sunInFront = step(0.0, sunPositionClip.z);
+                float sunVisibility = 1.0;
+                bool sunOnScreen = (sunUV.x >= 0.0 && sunUV.x <= 1.0 && sunUV.y >= 0.0 && sunUV.y <= 1.0);
 
-                    for (int i = 0; i < SAMPLES; i++) {
-                        currentUV -= deltaUV;
-                        vec2 clampedUV = clamp(currentUV, 0.0, 1.0);
-                        
-                        float sampleDepth = czm_readDepth(depthTexture, clampedUV);
-                        vec3 sampleColor = texture2D(colorTexture, clampedUV).rgb;
+                if (sunOnScreen) {
+                    float d0 = czm_readDepth(depthTexture, clamp(sunUV, 0.0, 1.0));
+                    sunVisibility = smoothstep(0.998, 0.9999, d0);
 
-                        float unoccludedSky = smoothstep(0.998, 1.0, sampleDepth);
+                }
 
-                        float skyBrightness = dot(sampleColor, vec3(0.299, 0.587, 0.114));
-                        float cloudDensity = smoothstep(0.40, 0.85, skyBrightness);
-                        
-                        float cloudScatterMultiplier = mix(1.0, (1.0 - cloudDensity * 0.75), unoccludedSky);
+                if (sunInFront > 0.5 && isDaytime) {
+                    float dist = length(uv - sunUV);
+                    float cosAngle = dot(normalize(vec3(uv - sunUV, 1.0)), vec3(0.0, 0.0, 1.0));
+                    float sunGlare = miePhase(cosAngle, 0.28) * 0.015; 
+                    sunGlare += exp(-dist * 1.4) * 0.05;
+                    sunGlare *= sunVisibility;
 
-                        lightShafts += unoccludedSky * cloudScatterMultiplier * weight;
-                        weight *= decay;
-                    }
+                    float jitter = noise(gl_FragCoord.xy);
+                    float lightShafts = 0.0;
+                    const int SAMPLES = 36;
+                    vec2 deltaUV = (uv - sunUV) / float(SAMPLES);
+                    vec2 currentUV = uv - deltaUV * jitter;
 
-                    vec3 goldenSunTone = vec3(1.0, 0.82, 0.55); 
-                    vec3 totalLight = goldenSunTone * (sunGlare + lightShafts * smoothstep(1.3, 0.0, dist) * 0.18);
-                    
-                    color += totalLight;
-                }
+                    float weight = 0.08; 
+                    float decay = 0.96;
 
-                gl_FragColor = vec4(color, 1.0);
-            }
-        `;
+                    for (int i = 0; i < SAMPLES; i++) {
+                        currentUV -= deltaUV;
+                        vec2 clampedUV = clamp(currentUV, 0.0, 1.0);
+                        float sampleDepth = czm_readDepth(depthTexture, clampedUV);
+                        vec3 sampleColor = texture2D(colorTexture, clampedUV).rgb;
 
-        if (Cesium.PostProcessStage) {
-            const lightingStage = new Cesium.PostProcessStage({
-                name: 'GeoFSLightingModule',
-                fragmentShader: lightingShader
-            });
-            
-            scene.postProcessStages.add(lightingStage);
-        }
-    }
+                        float unoccludedSky = smoothstep(0.998, 1.0, sampleDepth);
+                        float skyBrightness = dot(sampleColor, vec3(0.299, 0.587, 0.114));
+                        float cloudDensity = smoothstep(0.40, 0.85, skyBrightness);
+                        float cloudScatterMultiplier = mix(1.0, (1.0 - cloudDensity * 0.75), unoccludedSky);
+                        lightShafts += unoccludedSky * cloudScatterMultiplier * weight;
+
+                        weight *= decay;
+
+                    }
+
+                    vec3 goldenSunTone = vec3(1.0, 0.82, 0.55); 
+
+                    vec3 totalLight = goldenSunTone * (sunGlare + lightShafts * smoothstep(1.3, 0.0, dist) * 0.18);
+                    color += totalLight;
+                }
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+        if (Cesium.PostProcessStage) {
+            const lightingStage = new Cesium.PostProcessStage({
+                name: 'GeoFSLightingModule',
+                fragmentShader: lightingShader
+            });
+            scene.postProcessStages.add(lightingStage);
+
+        }
+    }
+
 })();
+
